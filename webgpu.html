@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+</head>
+<body onload="main()">
+<canvas id="webgpu-canvas" width="512" height="512"></canvas>
+</body>
+<script type="application/javascript">
+const total_frame = 60;
+var frame_count = total_frame;
+var total_ms = 0;
+var tempCanvasContext = null;
+var path;
+async function main() {
+    var canvas = document.getElementById("webgpu-canvas");
+
+    var adapter = await navigator.gpu.requestAdapter();
+    var device = await adapter.requestDevice();
+
+    var context = canvas.getContext('gpupresent');
+    var swapchainFormat = context.getSwapChainPreferredFormat(adapter);
+    var swapChain = context.configureSwapChain({
+        device,
+        format: swapchainFormat,
+    });
+
+    var position = new Float32Array([
+		-1,  -1, 0, 1,
+		-1,   1, 0, 1,
+        1,  -1, 0, 1,
+        1,   1, 0, 1	
+	]);
+	var coord = new Float32Array([
+		0,   1,
+		0,   0,
+        1,   1,
+        1,   0,	
+	]);
+	var indices = new Uint16Array([
+		0, 1, 2, 2, 1, 3
+    ]);
+    const vertexPositionsBuffer = device.createBuffer({
+        size: position.byteLength,
+        usage: GPUBufferUsage.VERTEX,
+        mappedAtCreation: true,
+    });
+    new Float32Array(vertexPositionsBuffer.getMappedRange()).set(position);
+    vertexPositionsBuffer.unmap();
+    const texCoordsBuffer = device.createBuffer({
+        size: coord.byteLength,
+        usage: GPUBufferUsage.VERTEX,
+        mappedAtCreation: true,
+    });
+    new Float32Array(texCoordsBuffer.getMappedRange()).set(coord);
+    texCoordsBuffer.unmap();
+    const indexBuffer = device.createBuffer({
+        size: indices.byteLength,
+        usage: GPUBufferUsage.INDEX,
+        mappedAtCreation: true,
+    });
+    new Uint16Array(indexBuffer.getMappedRange()).set(indices);
+    indexBuffer.unmap();
+
+    var vs =
+        `#version 450
+        layout(location = 0) in vec4 position;
+        layout(location = 1) in vec2 texcoord;
+        layout(location = 0) out vec2 v_texcoord;
+
+        void main() {
+            gl_Position = position;
+            v_texcoord = texcoord;
+        }`;
+    var fs =
+        `#version 450
+        layout(location = 0) in vec2 v_texcoord;
+        layout(location = 0) out vec4 o_color;
+
+        layout(set = 0, binding = 0) uniform sampler uSampler;
+        layout(set = 0, binding = 1) uniform texture2D uTexture0;
+
+        void main() {
+            o_color = texture(sampler2D(uTexture0, uSampler), v_texcoord);
+        }`;
+    var glslangModule = await import('https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel/glslang.js');
+    var glslang = await glslangModule.default();
+    var vsModule = device.createShaderModule({
+        code: glslang.compileGLSL(vs, "vertex"),
+        source: vs,
+        transform: source => glslang.compileGLSL(source, "vertex"),
+    });
+
+    var fsModule = device.createShaderModule({
+        code: glslang.compileGLSL(fs, "fragment"),
+        source: fs,
+        transform: source => glslang.compileGLSL(source, "fragment"),
+    });
+    var renderPipeline = device.createRenderPipeline({
+        vertexStage: {
+            module: vsModule,
+            entryPoint: "main",
+        },
+        fragmentStage: {
+            module: fsModule,
+            entryPoint: "main",
+        },
+        primitiveTopology: "triangle-list",
+        colorStates: [{
+            format: swapchainFormat,
+        }],
+        vertexState: {
+            vertexBuffers: [{
+                arrayStride: 16,
+                stepMode: "vertex",
+                attributes: [{
+                    shaderLocation: 0,
+                    offset: 0,
+                    format: "float4"
+                }]}, {
+                arrayStride: 8,
+                stepMode: "vertex",
+                attributes: [{
+                    shaderLocation: 1,
+                    offset: 0,
+                    format: "float2"
+                }]},
+            ]
+        },
+    });
+
+    var sampler = device.createSampler({
+        magFilter: "linear",
+        minFilter: "linear",
+    });
+    /*var imageElement = new Image();
+    imageElement.src = './image/jellyfish.png';
+    await new Promise(resolve => {imageElement.onload = () => resolve(imageElement)});*/
+    var size = {width: 512, height: 512, depth: 1};
+    var texture = device.createTexture({
+      size,
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.SAMPLED,
+    });
+ 
+    var bindGroupLayout  = device.createBindGroupLayout({
+        entries: [{
+            // Sampler
+            binding: 0,
+            visibility: GPUShaderStage.FRAGMENT,
+            type: "sampler"
+        }, {
+            // Texture views
+            binding: 1,
+            visibility: GPUShaderStage.FRAGMENT,
+            type: "sampled-texture"
+        }]
+    });
+    var bindGroup = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [{
+            binding: 0,
+            resource: sampler,
+        }, {
+            binding: 1,
+        resource: texture.createView(),
+      }],
+    });
+
+    async function frame() {
+        var imageElement = new Image();
+        if (frame_count > 0) {
+          path = './image/jellyfish' + (frame_count - 1) + '.png';
+          imageElement.src = path;
+        }
+        await new Promise(resolve => {imageElement.onload = () => resolve(imageElement)});
+        console.log("Now rendering", frame_count, ", the path is ", path);
+        const start = Date.now();
+        const imageBitmap = await createImageBitmap(imageElement);
+        device.defaultQueue.copyImageBitmapToTexture(
+          { imageBitmap },
+          { texture },
+          { width: imageBitmap.width, height: imageBitmap.height, depth: 1 }
+        );
+
+        const textureView = swapChain.getCurrentTexture().createView();
+        const renderPassDescriptor = {
+            colorAttachments: [{
+            attachment: textureView,
+            loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+        }]};
+
+        var commandEncoder = device.createCommandEncoder({});
+        const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+        passEncoder.setPipeline(renderPipeline);
+        passEncoder.setBindGroup(0, bindGroup);
+        passEncoder.setVertexBuffer(0, vertexPositionsBuffer);
+        passEncoder.setVertexBuffer(1, texCoordsBuffer);
+        passEncoder.setIndexBuffer(indexBuffer, "uint16");
+        passEncoder.drawIndexed(6);
+        passEncoder.endPass();
+        device.defaultQueue.submit([commandEncoder.finish()]);
+        imageBitmap.close();
+        const ms = Date.now() - start;
+
+        total_ms += ms;
+        console.log("Frame Count: ", frame_count, ", eplased time WebGPU(ms): ", ms);
+    }
+
+    async function doFrame() {
+        if (frame_count > 0) {
+          await frame();
+          --frame_count;
+          requestAnimationFrame(doFrame);
+        } else {
+            console.log("WebGPU average uploading time(ms) for ", total_frame, "frames: ", total_ms / total_frame);
+        }
+    }
+
+    requestAnimationFrame(doFrame);
+}
+</script>
+</html>

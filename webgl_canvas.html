@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+</head>
+<body onload="main()">
+<canvas id="gl" width="512" height="512"></canvas>
+</body>
+<script type="application/javascript">
+const total_frame = 60;
+let frame_count = total_frame;
+var gl;
+var program;
+var label;
+var total_ms = 0;
+var tempCanvasContext = null;
+var path;
+function main() {
+    var canvas = document.getElementById('gl');
+    gl = canvas.getContext("webgl2", {antialias: false});
+    vshader =
+        `#version 300 es
+        in highp vec4 a_position;
+        in highp vec2 a_coords;
+        out vec2 v_coords;
+        void main() {
+            gl_Position = a_position;
+            v_coords = a_coords;
+        }
+        `;
+    fshader =
+        `#version 300 es
+        precision mediump float;
+        uniform sampler2D uSampler0;
+        layout(location = 0) out vec4 o_color;
+        in vec2 v_coords;
+        void main() {
+		    o_color = texture(uSampler0, v_coords);
+        }
+        `;
+	program = buildProgram(gl, vshader, fshader);
+    gl.useProgram(program);
+    label = 'jellyfish';
+    
+    loadTexture(gl, program, label, 'jellyfish.png');
+}
+
+function buildProgram(gl, vshader, fshader)
+{
+    var vs = gl.createShader(gl.VERTEX_SHADER);
+	gl.shaderSource(vs, vshader);
+	gl.compileShader(vs);
+
+	var fs = gl.createShader(gl.FRAGMENT_SHADER);
+	gl.shaderSource(fs, fshader);
+	gl.compileShader(fs);
+
+	var program = gl.createProgram();
+	gl.attachShader(program, vs);
+	gl.attachShader(program, fs);
+	gl.linkProgram(program);
+	
+	return program;
+}
+
+var texture = {};
+var textureOK = {};
+
+function renderFrame() {
+    console.log("Now rendering", frame_count, ", the path is ", path);
+    const start = Date.now();
+    if (tempCanvasContext === null) {
+        tempCanvasContext = document.createElement('canvas').getContext('2d');
+        tempCanvasContext.canvas.width = texture[label].image.width;
+        tempCanvasContext.canvas.height = texture[label].image.height;
+    }
+    tempCanvasContext.drawImage(
+        texture[label].image, 0, 0, texture[label].image.width, texture[label].image.height);
+    handleLoadedTexture(gl, texture[label], label);
+    drawRect(gl, program);
+    const ms = Date.now() - start;
+    console.log("Frame Count: ", frame_count, ", eplased time WebGL Canvas(ms): ", ms);
+    total_ms += ms;
+    /*if (frame_count > 0) {
+        --frame_count;
+        total_ms += ms;
+        requestAnimationFrame(renderFrame);
+    } else {
+        console.log("WebGL Canvas average uploading time(ms) for ", total_frame, "frames: ", total_ms / total_frame);
+        
+    }*/
+}
+
+function loadTexture() {
+  textureOK[label] = 0;
+  if (frame_count > 0) {
+      path = './image/jellyfish' + (frame_count - 1) + '.png';
+  }
+  var imageFile = new Image();
+  imageFile.src = path;
+  texture[label] = gl.createTexture();
+  texture[label].image = imageFile;
+  imageFile.onload = function() {
+    //window.requestAnimationFrame(renderFrame);
+    if (frame_count > 0) {
+        --frame_count;
+        renderFrame();
+        requestAnimationFrame(loadTexture);
+    } else {
+        console.log("WebGL Canvas average uploading time(ms) for ", total_frame, "frames: ", total_ms / total_frame);
+        
+    }
+  }
+}
+
+function handleLoadedTexture(gl, textures, label) {
+  gl.bindTexture(gl.TEXTURE_2D, textures);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvasContext.canvas);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  textureOK[label] = 1;
+}
+
+function drawRect(gl, program)
+{
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, texture['jellyfish']);
+    var samplerLoc = gl.getUniformLocation(program, "uSampler0");
+    gl.uniform1i(samplerLoc, 0);
+
+	var posLoc = gl.getAttribLocation(program, 'a_position');
+	var coordLoc = gl.getAttribLocation(program, 'a_coords');
+	var position = [
+		-1,  -1, 0, 1,
+		-1,   1, 0, 1,
+        1,  -1, 0, 1,
+        1,   1, 0, 1		
+	];
+	var coord = [
+		0,   1,
+		0,   0,
+        1,   1,
+        1,   0,				
+	];
+	var indices = [
+		0, 1, 2, 2, 1, 3
+	];
+	var buf1 = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, buf1);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(position), gl.STATIC_DRAW);
+	gl.enableVertexAttribArray(posLoc);
+	gl.vertexAttribPointer(posLoc, 4, gl.FLOAT, false, 0, 0);
+	var buf2 = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, buf2);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(coord), gl.STATIC_DRAW);
+	gl.enableVertexAttribArray(coordLoc);
+	gl.vertexAttribPointer(coordLoc, 2, gl.FLOAT, false, 0, 0);
+	var ndxbuf = gl.createBuffer();
+	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ndxbuf);
+	gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+	gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+	
+	gl.bindBuffer(gl.ARRAY_BUFFER, null);
+	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+	gl.disableVertexAttribArray(posLoc);
+	gl.disableVertexAttribArray(coordLoc);
+	gl.useProgram(null);
+}
+</script>
+</html>
