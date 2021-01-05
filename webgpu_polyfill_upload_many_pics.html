@@ -12,6 +12,7 @@ var frame_count = total_frame;
 var total_ms = 0;
 var tempCanvasContext = null;
 var path;
+var images = [];
 async function main() {
     var canvas = document.getElementById("webgpu-canvas");
 
@@ -133,12 +134,8 @@ async function main() {
         magFilter: "linear",
         minFilter: "linear",
     });
+
     var size = {width: 512, height: 512, depth: 1};
-    var texture = device.createTexture({
-      size,
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.SAMPLED,
-    });
  
     var bindGroupLayout  = device.createBindGroupLayout({
         entries: [{
@@ -153,68 +150,83 @@ async function main() {
             type: "sampled-texture"
         }]
     });
-    var bindGroup = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [{
-            binding: 0,
-            resource: sampler,
-        }, {
-            binding: 1,
-        resource: texture.createView(),
-      }],
-    });
-
-    async function frame() {
+    for (var i = 0; i < 60; ++i) {
         var imageElement = new Image();
-        if (frame_count > 0) {
-          path = './image/jellyfish' + (frame_count - 1) + '.png';
-          imageElement.src = path;
-        }
+        imageElement.src = './image/jellyfish' + i + '.png';
         await new Promise(resolve => {imageElement.onload = () => resolve(imageElement)});
-        //console.log("Now rendering", frame_count, ", the path is ", path);
-        const start = Date.now();
-        const imageBitmap = await createImageBitmap(imageElement);
-        device.defaultQueue.copyImageBitmapToTexture(
-          { imageBitmap },
-          { texture },
-          { width: imageBitmap.width, height: imageBitmap.height, depth: 1 }
-        );
-
-        const textureView = swapChain.getCurrentTexture().createView();
-        const renderPassDescriptor = {
-            colorAttachments: [{
-            attachment: textureView,
-            loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
-        }]};
-
-        var commandEncoder = device.createCommandEncoder({});
-        const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-        passEncoder.setPipeline(renderPipeline);
-        passEncoder.setBindGroup(0, bindGroup);
-        passEncoder.setVertexBuffer(0, vertexPositionsBuffer);
-        passEncoder.setVertexBuffer(1, texCoordsBuffer);
-        passEncoder.setIndexBuffer(indexBuffer, "uint16");
-        passEncoder.drawIndexed(6);
-        passEncoder.endPass();
-        device.defaultQueue.submit([commandEncoder.finish()]);
-        imageBitmap.close();
-        const ms = Date.now() - start;
-
-        total_ms += ms;
-        //console.log("Frame Count: ", frame_count, ", eplased time WebGPU(ms): ", ms);
+        images.push(imageElement);
     }
 
-    async function doFrame() {
-        if (frame_count > 0) {
-          await frame();
-          --frame_count;
-          requestAnimationFrame(doFrame);
-        } else {
-            console.log("WebGPU average uploading time(ms) for ", total_frame, "frames: ", total_ms / total_frame);
+    async function doUploading() {
+        for (var j = 0; j < 60; ++j) {
+            const start = Date.now();
+            var texture = device.createTexture({
+               size,
+               format: 'rgba8unorm',
+               usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.SAMPLED,
+            });
+            var bindGroup = device.createBindGroup({
+                layout: bindGroupLayout,
+                entries: [{
+                    binding: 0,
+                    resource: sampler,
+                }, {
+                    binding: 1,
+                    resource: texture.createView(),
+                }],
+            });
+            
+            if (tempCanvasContext === null) {
+                tempCanvasContext = document.createElement('canvas').getContext('2d');
+                tempCanvasContext.canvas.width = images[j].width;
+                tempCanvasContext.canvas.height = images[j].height;
+            }
+            tempCanvasContext.drawImage(
+                images[j], 0, 0, images[j].width, images[j].height);
+        
+            let imageData = tempCanvasContext.getImageData(0, 0, images[j].width, images[j].height).data;
+        
+            const uploadingBuffer = device.createBuffer({
+                size: imageData.byteLength,
+                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+                mappedAtCreation: false,
+            });
+
+            device.defaultQueue.writeBuffer(uploadingBuffer, 0, imageData);
+
+            const textureView = swapChain.getCurrentTexture().createView();
+            const renderPassDescriptor = {
+                colorAttachments: [{
+                attachment: textureView,
+                loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+            }]};
+            var tempMs = Date.now() - start;
+            const imageBitmap = await createImageBitmap(images[j]);
+            device.defaultQueue.copyImageBitmapToTexture(
+              { imageBitmap },
+              { texture },
+              { width: imageBitmap.width, height: imageBitmap.height, depth: 1 }
+            );
+
+            var start2 = Date.now();
+            var commandEncoder = device.createCommandEncoder({});
+            const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+            passEncoder.setPipeline(renderPipeline);
+            passEncoder.setBindGroup(0, bindGroup);
+            passEncoder.setVertexBuffer(0, vertexPositionsBuffer);
+            passEncoder.setVertexBuffer(1, texCoordsBuffer);
+            passEncoder.setIndexBuffer(indexBuffer, "uint16");
+            passEncoder.drawIndexed(6);
+            passEncoder.endPass();
+            device.defaultQueue.submit([commandEncoder.finish()]);
+            const ms = Date.now() - start2 + tempMs;
+            imageBitmap.close();
+
+            total_ms += ms;
         }
-    }
-
-    requestAnimationFrame(doFrame);
+   }
+   await doUploading();
+   console.log ("upload 60 pics with webgpu polyfill in a single frame uses: ", total_ms, "(ms)");
 }
 </script>
 </html>

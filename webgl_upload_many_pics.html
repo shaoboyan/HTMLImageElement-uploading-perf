@@ -14,6 +14,8 @@ var program;
 var label;
 var path;
 var total_ms = 0;
+var images = [];
+var loadedImages = 1;
 function main() {
     var canvas = document.getElementById('gl');
     gl = canvas.getContext("webgl2", {antialias: false});
@@ -66,50 +68,63 @@ function buildProgram(gl, vshader, fshader)
 var texture = {};
 var textureOK = {};
 
-function renderFrame() {
+function renderFrame(num) {
     //console.log("Now rendering", frame_count, ", the path is ", path);
     const start = Date.now();
-    handleLoadedTexture(gl, texture[label], label);
-    drawRect(gl, program);
+    var texture = gl.createTexture();
+    handleLoadedTexture(gl, texture, num, label);
+    drawRect(gl, program, texture);
 
     const ms = Date.now() - start;
     //console.log("Frame Count: ", frame_count, ", eplased time WebGL(ms): ", ms);
     total_ms += ms;
-
-function loadTexture() {
-  textureOK[label] = 0;
-  if (frame_count > 0) {
-      path = './image/jellyfish' + (frame_count - 1) + '.png';
-  }
-  var imageFile = new Image();
-  imageFile.src = path;
-  texture[label] = gl.createTexture();
-  texture[label].image = imageFile;
-  imageFile.onload = function() {
-    if (frame_count > 0) {
-        --frame_count;
-        renderFrame();
-        requestAnimationFrame(loadTexture);
-    } else {
-        console.log("WebGL average uploading time(ms) for ", total_frame, "frames: ", total_ms / total_frame);
-    }
-  }
 }
 
-function handleLoadedTexture(gl, textures, label) {
+function doUploading() {
+    const start = Date.now();
+    for (var j = 0; j < 60; ++j) {
+        renderFrame(j);
+    }
+    console.log("WebGL uploading 60 pics use ", total_ms, "(ms)");
+
+}
+
+function checkStartUploading() {
+    if (loadedImages < 60) {
+        ++loadedImages;
+    } else {
+        doUploading();
+    }
+}
+
+function loadTexture() {
+    for (var i = 0; i < 60; ++i) {
+        var imageElement = new Image();
+        imageElement.src = './image/jellyfish' + i + '.png';
+        imageElement.onload = function() {
+            checkStartUploading();
+        }
+        images.push(imageElement);
+    }
+  
+    textureOK[label] = 0;
+}
+
+
+function handleLoadedTexture(gl, textures, num, label) {
   gl.bindTexture(gl.TEXTURE_2D, textures);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textures.image);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, images[num]);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.bindTexture(gl.TEXTURE_2D, null);
   textureOK[label] = 1;
 }
 
-function drawRect(gl, program)
+function drawRect(gl, program, texture)
 {
     gl.useProgram(program);
     gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, texture['jellyfish']);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
     var samplerLoc = gl.getUniformLocation(program, "uSampler0");
     gl.uniform1i(samplerLoc, 0);
 

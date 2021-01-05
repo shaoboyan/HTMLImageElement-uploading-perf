@@ -67,7 +67,7 @@ var texture = {};
 var textureOK = {};
 
 function renderFrame() {
-    console.log("Now rendering", frame_count, ", the path is ", path);
+    //console.log("Now rendering", frame_count, ", the path is ", path);
     const start = Date.now();
     if (tempCanvasContext === null) {
         tempCanvasContext = document.createElement('canvas').getContext('2d');
@@ -79,16 +79,8 @@ function renderFrame() {
     handleLoadedTexture(gl, texture[label], label);
     drawRect(gl, program);
     const ms = Date.now() - start;
-    console.log("Frame Count: ", frame_count, ", eplased time WebGL Canvas(ms): ", ms);
+    //console.log("Frame Count: ", frame_count, ", eplased time WebGL Canvas(ms): ", ms);
     total_ms += ms;
-    /*if (frame_count > 0) {
-        --frame_count;
-        total_ms += ms;
-        requestAnimationFrame(renderFrame);
-    } else {
-        console.log("WebGL Canvas average uploading time(ms) for ", total_frame, "frames: ", total_ms / total_frame);
-        
-    }*/
 }
 
 function loadTexture() {
@@ -101,7 +93,6 @@ function loadTexture() {
   texture[label] = gl.createTexture();
   texture[label].image = imageFile;
   imageFile.onload = function() {
-    //window.requestAnimationFrame(renderFrame);
     if (frame_count > 0) {
         --frame_count;
         renderFrame();

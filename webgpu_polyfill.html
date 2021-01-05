@@ -133,6 +133,7 @@ async function main() {
         magFilter: "linear",
         minFilter: "linear",
     });
+
     var size = {width: 512, height: 512, depth: 1};
     var texture = device.createTexture({
       size,
@@ -171,14 +172,32 @@ async function main() {
           imageElement.src = path;
         }
         await new Promise(resolve => {imageElement.onload = () => resolve(imageElement)});
-        //console.log("Now rendering", frame_count, ", the path is ", path);
-        const start = Date.now();
         const imageBitmap = await createImageBitmap(imageElement);
         device.defaultQueue.copyImageBitmapToTexture(
           { imageBitmap },
           { texture },
           { width: imageBitmap.width, height: imageBitmap.height, depth: 1 }
         );
+       // console.log("Now rendering", frame_count, ", the path is ", path);
+    
+        const start = Date.now();
+        if (tempCanvasContext === null) {
+            tempCanvasContext = document.createElement('canvas').getContext('2d');
+            tempCanvasContext.canvas.width = imageElement.width;
+            tempCanvasContext.canvas.height = imageElement.height;
+        }
+        tempCanvasContext.drawImage(
+            imageElement, 0, 0, imageElement.width, imageElement.height);
+        
+        let imageData = tempCanvasContext.getImageData(0, 0, imageElement.width, imageElement.height).data;
+        
+        const uploadingBuffer = device.createBuffer({
+            size: imageData.byteLength,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+            mappedAtCreation: false,
+        });
+
+        device.defaultQueue.writeBuffer(uploadingBuffer, 0, imageData);
 
         const textureView = swapChain.getCurrentTexture().createView();
         const renderPassDescriptor = {
