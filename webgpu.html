@@ -10,6 +10,7 @@
 const total_frame = 60;
 var frame_count = total_frame;
 var total_ms = 0;
+var total_ib_ms = 0;
 var tempCanvasContext = null;
 var path;
 async function main() {
@@ -174,6 +175,7 @@ async function main() {
         //console.log("Now rendering", frame_count, ", the path is ", path);
         const start = Date.now();
         const imageBitmap = await createImageBitmap(imageElement);
+        const ib_ms = Date.now() - start;
         device.defaultQueue.copyImageBitmapToTexture(
           { imageBitmap },
           { texture },
@@ -201,6 +203,7 @@ async function main() {
         const ms = Date.now() - start;
 
         total_ms += ms;
+        total_ib_ms += ib_ms;
         //console.log("Frame Count: ", frame_count, ", eplased time WebGPU(ms): ", ms);
     }
 
@@ -211,6 +214,7 @@ async function main() {
           requestAnimationFrame(doFrame);
         } else {
             console.log("WebGPU average uploading time(ms) for ", total_frame, "frames: ", total_ms / total_frame);
+            console.log("WebGPU average uploading time(ms) for create IB", total_frame, "frames: ", total_ib_ms / total_frame);
         }
     }
 

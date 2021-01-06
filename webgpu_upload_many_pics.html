@@ -10,6 +10,7 @@
 const total_frame = 60;
 var frame_count = total_frame;
 var total_ms = 0;
+var total_ib_ms = 0;
 var tempCanvasContext = null;
 var images = [];
 async function main() {
@@ -160,6 +161,7 @@ async function main() {
         for (var j = 0; j < 60; ++j) {
             const start = Date.now();
             const imageBitmap = await createImageBitmap(images[j]); 
+            const ib_ms = Date.now() - start;
             var texture = device.createTexture({
                size,
                format: 'rgba8unorm',
@@ -201,11 +203,13 @@ async function main() {
             imageBitmap.close();
             const ms = Date.now() - start;
             total_ms += ms;
+            total_ib_ms += ib_ms;
         }
     }
 
     await doUploading();
     console.log ("upload 60 pics with copyIB in a single frame uses: ", total_ms, "(ms)");
+    console.log("upload 60 pics with copyIB in a single frame create IB uses: ", total_ib_ms, "(ms)")
 }
 </script>
 </html>
